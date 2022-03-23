@@ -13,6 +13,7 @@ var config bool   bIgnoreAdmin;
 var config int    MaxIdleTime;
 var config int    IdleCountdown;
 var config string WarningMessage;
+var config string KickedMessage;
 
 // Internal
 var PlayerIdleInfo PlayerIdleInfoList[32];
@@ -99,12 +100,10 @@ function CheckIdlePlayers() {
 					if (PlayerIdleInfoList[i].SecondsIdle == MaxIdleTime) {
 						if (PlayerIdleInfoList[i].IdleCountdownRemainder > 0) {
 							Player.ClientPlaySound(Sound'NewBeep', True);
-							Player.ClientMessage(FormatWarningMessage(PlayerIdleInfoList[i].IdleCountdownRemainder));
+							Player.ClientMessage(FormatMessage(WarningMessage, PlayerIdleInfoList[i].IdleCountdownRemainder));
 							PlayerIdleInfoList[i].IdleCountdownRemainder--;
 						} else {
-							// Hack: rather than dealing with replication... just issue the Nexgen command for "!spec".
-							// Obviously this means the entire script is useless if Nexgen isn't being used.
-							Player.ConsoleCommand("mutate NSC SPECTATE");
+							ReconnectPlayer(Player);
 						}
 					} else {
 						PlayerIdleInfoList[i].SecondsIdle++;
@@ -115,6 +114,25 @@ function CheckIdlePlayers() {
 					}
 				}
 			}
+		}
+	}
+}
+
+// Hack: rather than dealing with replication... just issue the Nexgen command for "!spec".
+// Obviously this means the entire script is useless if Nexgen isn't being used.
+function ReconnectPlayer(PlayerPawn Player) {
+	local Pawn P;
+	local PlayerPawn PP;
+
+	// Reconnect player...
+	Player.ConsoleCommand("mutate NSC SPECTATE");
+
+	// ...and inform other players of what's just happened.
+	for (P = Level.PawnList; P != None; P = P.NextPawn) {
+		PP = PlayerPawn(P);
+
+		if (PP != None && PP.PlayerReplicationInfo.PlayerID != Player.PlayerReplicationInfo.PlayerID) {
+			PP.ClientMessage(FormatMessage(KickedMessage, Player.PlayerReplicationInfo.PlayerName));
 		}
 	}
 }
@@ -158,15 +176,15 @@ function PlayerPawn GetPlayerById(int PlayerID) {
 	return None;
 }
 
-function string FormatWarningMessage(int Seconds) {
+function string FormatMessage(string Message, coerce string MessageVar) {
 	local int i;
 	local string S;
 
-	S = WarningMessage;
+	S = Message;
 
-	while (InStr(S, "%i") >= 0) {
-		i = InStr(S, "%i");
-		S = Left(S, i) $ Seconds $ Mid(S, i + 2);
+	while (InStr(S, "%s") >= 0) {
+		i = InStr(S, "%s");
+		S = Left(S, i) $ MessageVar $ Mid(S, i + 2);
 	}
 
 	return S;
@@ -176,5 +194,6 @@ DefaultProperties {
 	bIgnoreAdmin=False
 	MaxIdleTime=300
 	IdleCountdown=5
-	WarningMessage="<C00>[BTNetIdle] You will be reconnected as a spectator in %i seconds..."
+	WarningMessage="<C00>[BTNetIdle] You will be reconnected as a spectator in %s seconds..."
+	KickedMessage="[BTNetIdle] %s was automatically reconnected as a spectator."
 }
